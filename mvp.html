@@ -3,9 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Cardápio Escolar — Export PNG</title>
+  <title>Cardápio Escolar — Supabase</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://unpkg.com/@supabase/supabase-js"></script>
 </head>
 <body class="bg-slate-100 p-4">
 
@@ -13,7 +14,7 @@
     <header class="flex flex-wrap items-center justify-between mb-4 gap-2">
       <div>
         <h1 id="titulo" class="text-2xl font-semibold text-blue-600">Cardápio</h1>
-        <p class="text-sm text-slate-500">Cadastro de almoço (salvo no LocalStorage). Exporta PNG escolar responsivo.</p>
+        <p class="text-sm text-slate-500">Cadastro de almoço persistente no Supabase. Exporta PNG responsivo.</p>
       </div>
       <div class="space-x-2">
         <button onclick="changeMonth(-1)" class="btn">◀</button>
@@ -63,6 +64,12 @@
   </style>
 
   <script>
+  // ====== CONFIGURAÇÃO SUPABASE (já preenchido com seus valores) ======
+  const SUPABASE_URL = "https://dfyhbeppubrmxhoyqjrl.supabase.co";
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmeWhiZXBwdWJybXhob3lxanJsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg4MzAzOTYsImV4cCI6MjA3NDQwNjM5Nn0.A4NUvSXbxFw-CR0fhSrQo2mJn3C9vI_sgsdWBiuh6Z8";
+  const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  // ====== referência de elementos ======
   const calendarGrid = document.getElementById("calendar-grid");
   const titulo = document.getElementById("titulo");
   const modal = document.getElementById("modal");
@@ -77,12 +84,42 @@
   let viewDate = new Date();
   viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
 
-  let menuData = JSON.parse(localStorage.getItem("cardapio.digital.v2") || "{}");
+  let menuData = {};
   let modalDate = null;
 
-  function saveData(){ localStorage.setItem("cardapio.digital.v2", JSON.stringify(menuData)); }
   function formatISO(y,m,d){ return `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
 
+  // ====== carregar dados do Supabase ======
+  async function loadData(){
+    try {
+      const { data, error } = await supabaseClient
+        .from("cardapio")
+        .select("data_iso, base, guarnicao, proteico, salada, sobremesa")
+        .order("data_iso", { ascending: true });
+
+      if (error) {
+        console.error("Erro ao carregar:", error);
+        return;
+      }
+      menuData = {};
+      data.forEach(row => {
+        // garantir que data_iso esteja no formato YYYY-MM-DD
+        const iso = (row.data_iso instanceof String || typeof row.data_iso === 'string') ? row.data_iso : new Date(row.data_iso).toISOString().slice(0,10);
+        menuData[iso] = {
+          base: row.base,
+          guarnicao: row.guarnicao,
+          proteico: row.proteico,
+          salada: row.salada,
+          sobremesa: row.sobremesa
+        };
+      });
+      renderCalendar();
+    } catch (err) {
+      console.error("Erro inesperado ao carregar dados:", err);
+    }
+  }
+
+  // ====== render do calendário ======
   function renderCalendar(){
     const year = viewDate.getFullYear();
     const month = viewDate.getMonth();
@@ -107,7 +144,7 @@
   function renderWeek(days, year, month){
     for (let i=1; i<=5; i++){
       const cell = document.createElement("div");
-      cell.className = "min-h-[100px] p-2 border rounded-md flex flex-col justify-between hover:shadow-lg break-words text-sm";
+      cell.className = "min-h-[100px] p-2 border rounded-md flex flex-col justify-between hover:shadow-lg break-words text-sm bg-white";
       const dayObj = days.find(d => new Date(year, month, d).getDay() === i);
       if (!dayObj) { cell.className = "min-h-[100px] bg-slate-50 rounded-md"; calendarGrid.appendChild(cell); continue; }
       const iso = formatISO(year, month, dayObj);
@@ -141,6 +178,7 @@
 
   function escapeHtml(str){ if(!str) return ''; return String(str).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
 
+  // ====== modal ======
   function openModalForDay(iso){
     modalDate = iso;
     const entry = menuData[iso] || {};
@@ -156,15 +194,50 @@
 
   function closeModal(){ modal.classList.add("hidden"); }
 
-  function saveFromModal(){
-    if (!menuData[modalDate]) menuData[modalDate] = {};
-    menuData[modalDate].base = modalBase.value.trim();
-    menuData[modalDate].guarnicao = modalGuarnicao.value.trim();
-    menuData[modalDate].proteico = modalProteico.value.trim();
-    menuData[modalDate].salada = modalSalada.value.trim();
-    menuData[modalDate].sobremesa = modalSobremesa.value.trim();
-    if (Object.values(menuData[modalDate]).every(v => !v)) delete menuData[modalDate];
-    saveData();
+  // ====== salvar / deletar no Supabase ======
+  async function saveFromModal(){
+    if (!modalDate) return;
+    const newEntry = {
+      base: modalBase.value.trim(),
+      guarnicao: modalGuarnicao.value.trim(),
+      proteico: modalProteico.value.trim(),
+      salada: modalSalada.value.trim(),
+      sobremesa: modalSobremesa.value.trim()
+    };
+
+    const allEmpty = Object.values(newEntry).every(v => !v);
+    try {
+      if (allEmpty) {
+        // remover do banco se existir
+        const { error: delErr } = await supabaseClient
+          .from("cardapio")
+          .delete()
+          .eq("data_iso", modalDate);
+        if (delErr) {
+          console.error("Erro ao deletar:", delErr);
+          alert("Erro ao deletar do banco.");
+        } else {
+          delete menuData[modalDate];
+        }
+      } else {
+        // upsert (vai inserir ou atualizar por data_iso)
+        const { error: upErr } = await supabaseClient
+          .from("cardapio")
+          .upsert({
+            data_iso: modalDate,
+            ...newEntry
+          }, { onConflict: 'data_iso' });
+        if (upErr) {
+          console.error("Erro ao salvar:", upErr);
+          alert("Erro ao salvar no banco.");
+        } else {
+          menuData[modalDate] = newEntry;
+        }
+      }
+    } catch (err) {
+      console.error("Erro inesperado ao salvar:", err);
+      alert("Erro inesperado ao salvar.");
+    }
     closeModal();
     renderCalendar();
   }
@@ -172,7 +245,7 @@
   function changeMonth(delta){ viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth()+delta, 1); renderCalendar(); }
   function goToday(){ const d = new Date(); viewDate = new Date(d.getFullYear(), d.getMonth(), 1); renderCalendar(); }
 
-  // Export PNG
+  // ====== Export PNG (mantive seu fluxo, copiado e adaptado) ======
   async function generateImage(){
     if (exportBtn.disabled) return;
     exportBtn.disabled = true;
@@ -189,13 +262,14 @@
       const footer = clone.querySelector("footer");
       if (footer) footer.remove();
 
-      // remover botões e áreas de edição
-      clone.querySelectorAll("button, .text-right").forEach(el => el.remove());
+      // remover botões e áreas de edição no clone
+      clone.querySelectorAll("button").forEach(el => el.remove());
+      clone.querySelectorAll(".text-right").forEach(el => el.remove());
       clone.querySelectorAll(".hover\\:shadow-lg").forEach(n => n.classList.remove("hover:shadow-lg"));
 
       clone.style.boxShadow = 'none';
       clone.style.background = 'transparent';
-      clone.style.width = calWidth + 'px'; 
+      clone.style.width = calWidth + 'px';
       clone.style.boxSizing = 'border-box';
 
       const wrapper = document.createElement('div');
@@ -210,7 +284,7 @@
       wrapper.style.overflow = 'visible';
       wrapper.style.fontFamily = "Arial, sans-serif";
 
-      // 🔹 Header em linha
+      // header custom
       const headerRow = document.createElement("div");
       headerRow.style.display = "flex";
       headerRow.style.alignItems = "center";
@@ -218,7 +292,6 @@
       headerRow.style.gap = "20px";
       headerRow.style.marginBottom = "25px";
 
-      // Logo à esquerda
       const logo = document.createElement("img");
       logo.src = "https://i.ibb.co/KxSrH0Nj/logo.png";
       logo.alt = "Logo";
@@ -234,7 +307,6 @@
 
       headerRow.appendChild(logo);
 
-      // Título + ícones à direita
       const titleBlock = document.createElement("div");
       titleBlock.style.flex = "1";
 
@@ -251,7 +323,6 @@
 
       titleBlock.appendChild(title);
       titleBlock.appendChild(iconsRow);
-
       headerRow.appendChild(titleBlock);
 
       wrapper.appendChild(headerRow);
@@ -282,7 +353,8 @@
     }
   }
 
-  renderCalendar();
+  // ====== inicializa ======
+  loadData();
   </script>
 </body>
 </html>

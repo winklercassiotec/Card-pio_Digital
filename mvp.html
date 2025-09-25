@@ -183,64 +183,84 @@
       const calendar = document.getElementById("calendar");
       const rect = calendar.getBoundingClientRect();
       const calWidth = Math.ceil(rect.width);
-      const calHeight = Math.ceil(rect.height);
 
       const clone = calendar.cloneNode(true);
       clone.classList.remove("shadow-md");
       const footer = clone.querySelector("footer");
       if (footer) footer.remove();
 
-      // 🚀 remover botões e áreas de edição
+      // remover botões e áreas de edição
       clone.querySelectorAll("button, .text-right").forEach(el => el.remove());
       clone.querySelectorAll(".hover\\:shadow-lg").forEach(n => n.classList.remove("hover:shadow-lg"));
 
       clone.style.boxShadow = 'none';
       clone.style.background = 'transparent';
-      clone.style.width = calWidth + 'px';
-      clone.style.height = calHeight + 'px';
+      clone.style.width = calWidth + 'px'; 
       clone.style.boxSizing = 'border-box';
 
       const wrapper = document.createElement('div');
       wrapper.style.position = 'absolute';
       wrapper.style.left = '-9999px';
       wrapper.style.top = '0';
-      wrapper.style.padding = '30px';
+      wrapper.style.padding = '40px';
       wrapper.style.boxSizing = 'border-box';
       wrapper.style.background = 'white';
-      wrapper.style.border = '5px solid #2563eb';
-      wrapper.style.borderRadius = '16px';
-      wrapper.style.textAlign = 'center';
+      wrapper.style.border = '4px solid #2563eb';
+      wrapper.style.borderRadius = '20px';
+      wrapper.style.overflow = 'visible';
+      wrapper.style.fontFamily = "Arial, sans-serif";
 
-      // Logo (substitua pelo base64 real se quiser)
+      // 🔹 Header em linha
+      const headerRow = document.createElement("div");
+      headerRow.style.display = "flex";
+      headerRow.style.alignItems = "center";
+      headerRow.style.justifyContent = "flex-start";
+      headerRow.style.gap = "20px";
+      headerRow.style.marginBottom = "25px";
+
+      // Logo à esquerda
       const logo = document.createElement("img");
-      logo.src = "data:\logo.png;base64,"; 
+      logo.src = "https://i.ibb.co/KxSrH0Nj/logo.png";
       logo.alt = "Logo";
-      logo.style.maxWidth = "160px";
-      logo.style.marginBottom = "15px";
-      wrapper.appendChild(logo);
+      logo.crossOrigin = "anonymous";
+      logo.style.maxHeight = "70px";
+      logo.style.width = "auto";
+      logo.style.display = "block";
 
-      // Título
+      await new Promise((resolve) => {
+        logo.onload = resolve;
+        logo.onerror = resolve;
+      });
+
+      headerRow.appendChild(logo);
+
+      // Título + ícones à direita
+      const titleBlock = document.createElement("div");
+      titleBlock.style.flex = "1";
+
       const title = document.createElement("h2");
-      title.textContent = "Cardápio Restaurante";
+      title.textContent = "Cardápio do Restaurante";
       title.style.color = "#2563eb";
-      title.style.fontSize = "22px";
-      title.style.fontWeight = "bold";
-      title.style.marginBottom = "15px";
-      wrapper.appendChild(title);
+      title.style.fontSize = "24px";
+      title.style.fontWeight = "700";
+      title.style.marginBottom = "6px";
 
-      // Ícones
       const iconsRow = document.createElement("div");
-      iconsRow.innerHTML = "🍽️ 🥗 🍖 🥤 🍎";
-      iconsRow.style.fontSize = "24px";
-      iconsRow.style.marginBottom = "15px";
-      wrapper.appendChild(iconsRow);
+      iconsRow.innerHTML = "🍽️ 🥗 🍖 🍊 🍮";
+      iconsRow.style.fontSize = "22px";
 
+      titleBlock.appendChild(title);
+      titleBlock.appendChild(iconsRow);
+
+      headerRow.appendChild(titleBlock);
+
+      wrapper.appendChild(headerRow);
       wrapper.appendChild(clone);
       document.body.appendChild(wrapper);
 
       const canvas = await html2canvas(wrapper, {
         scale: 2,
-        backgroundColor: null,
+        backgroundColor: "#ffffff",
         useCORS: true
       });
 
